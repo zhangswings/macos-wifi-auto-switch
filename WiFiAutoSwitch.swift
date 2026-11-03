@@ -22,6 +22,21 @@ func shell(_ command: String) -> String {
     return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
 }
 
+func shellStatus(_ command: String) -> Int32 {
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+    proc.arguments = ["-c", command]
+    proc.standardOutput = Pipe()
+    proc.standardError = Pipe()
+    do {
+        try proc.run()
+        proc.waitUntilExit()
+        return proc.terminationStatus
+    } catch {
+        return -1
+    }
+}
+
 let SCRIPT = (Bundle.main.url(forResource: "wifi-auto-switch", withExtension: "sh")?.path ?? "")
 let AGENT_LABEL = "com.user.wifiautoswitch"
 let LOGIN_LABEL = "com.user.wifiautoswitch-login"
@@ -31,26 +46,42 @@ let LOGIN_PLIST = (HOME as NSString).appendingPathComponent("Library/LaunchAgent
 let SCRIPT_DST = (HOME as NSString).appendingPathComponent("Library/Application Support/WiFiAutoSwitch/wifi-auto-switch.sh")
 let UID = shell("id -u").trimmingCharacters(in: .whitespacesAndNewlines)
 
-func enableService(watchdog: Bool) {
+func enableService(watchdog: Bool) -> String {
     let fm = FileManager.default
     let dstDir = (SCRIPT_DST as NSString).deletingLastPathComponent
-    try? fm.createDirectory(atPath: dstDir, withIntermediateDirectories: true)
-    try? fm.copyItem(atPath: SCRIPT, toPath: SCRIPT_DST)
-    guard let plistSrc = Bundle.main.url(forResource: "com.user.wifiautoswitch", withExtension: "plist") else { return }
+    do {
+        try fm.createDirectory(atPath: dstDir, withIntermediateDirectories: true)
+        if fm.fileExists(atPath: SCRIPT_DST) { try fm.removeItem(atPath: SCRIPT_DST) }
+        try fm.copyItem(atPath: SCRIPT, toPath: SCRIPT_DST)
+    } catch {
+        return "安装脚本失败：\(error.localizedDescription)"
+    }
+    guard let plistSrc = Bundle.main.url(forResource: "com.user.wifiautoswitch", withExtension: "plist") else {
+        return "找不到后台配置"
+    }
     let plist = NSMutableDictionary(contentsOf: plistSrc) ?? [:]
     plist["ProgramArguments"] = ["/bin/bash", SCRIPT_DST]
+    plist["StandardOutPath"] = (HOME as NSString).appendingPathComponent("Library/Logs/wifiautoswitch.log")
+    plist["StandardErrorPath"] = (HOME as NSString).appendingPathComponent("Library/Logs/wifiautoswitch.err.log")
     if watchdog {
         plist["StartInterval"] = 120
     } else {
         plist.removeObject(forKey: "StartInterval")
     }
-    plist.write(to: URL(fileURLWithPath: AGENT_PLIST), atomically: true)
-    _ = shell("launchctl bootstrap gui/\(UID) \(AGENT_PLIST)")
+    guard plist.write(to: URL(fileURLWithPath: AGENT_PLIST), atomically: true) else {
+        return "写入后台配置失败"
+    }
+    _ = shellStatus("launchctl bootout gui/\(UID)/\(AGENT_LABEL) >/dev/null 2>&1 || true")
+    guard shellStatus("launchctl bootstrap gui/\(UID) \"\(AGENT_PLIST)\"") == 0 else {
+        return "启动后台服务失败"
+    }
+    return "后台服务已启用"
 }
 
-func disableService() {
-    _ = shell("launchctl bootout gui/\(UID)/\(AGENT_LABEL)")
+func disableService() -> String {
+    _ = shellStatus("launchctl bootout gui/\(UID)/\(AGENT_LABEL) >/dev/null 2>&1 || true")
     try? FileManager.default.removeItem(atPath: AGENT_PLIST)
+    return "后台服务已停用"
 }
 
 func isServiceEnabled() -> Bool {
@@ -131,10 +162,10 @@ struct ContentView: View {
 
             GroupBox("手动控制 WiFi（立即生效）") {
                 HStack(spacing: 10) {
-                    Button("立即开启") { doAction { _ = shell("bash \"\(SCRIPT)\" on") } }
+                    Button("立即开启") { doAction { _ = shell("bash \"\(SCRIPT)\" on"); return "WiFi 已开启" } }
                     Button("立即关闭") {
                         if status.reachable == "yes" {
-                            doAction { _ = shell("bash \"\(SCRIPT)\" off") }
+                            doAction { _ = shell("bash \"\(SCRIPT)\" off"); return "WiFi 已关闭" }
                         } else {
                             showCloseAlert = true
                         }
@@ -142,9 +173,7 @@ struct ContentView: View {
                 }
                 .alert("确认关闭 WiFi？", isPresented: $showCloseAlert) {
                     Button("仍要关闭", role: .destructive) {
-                        _ = shell("bash \"\(SCRIPT)\" off")
-                        status = readStatus()
-                        msg = "已关闭 WiFi"
+                        doAction { _ = shell("bash \"\(SCRIPT)\" off"); return "WiFi 已关闭" }
                     }
                     Button("取消", role: .cancel) {}
                 } message: {
@@ -189,10 +218,16 @@ struct ContentView: View {
         }
     }
 
-    func doAction(_ action: () -> Void) {
-        action()
-        status = readStatus()
-        msg = "操作完成"
+    func doAction(_ action: @escaping () -> String) {
+        msg = "处理中…"
+        DispatchQueue.global(qos: .utility).async {
+            let result = action()
+            let nextStatus = readStatus()
+            DispatchQueue.main.async {
+                status = nextStatus
+                msg = result
+            }
+        }
     }
 }
 

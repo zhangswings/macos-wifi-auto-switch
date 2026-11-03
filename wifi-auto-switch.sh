@@ -131,17 +131,17 @@ check_reachable() {
     local iface="$1" src_ip="$2"
     local attempt host gw
 
-    # 网关级预检：有线网关可达性（失败则提前判定不通，省去公网超时等待）
-    # 仅作快速否定判定；最终"联通"仍以公网探测为准
+    # 网关级预检：网关可达时可快速确认链路，但失败不能直接判定断网。
+    # 一些企业网络会过滤 ICMP；最终仍用绑定到有线源 IP 的探测确认。
     gw=$(get_wired_gateway "$iface")
-    if [[ -n "$gw" ]] && ! /sbin/ping -S "$src_ip" -c 1 -t 2 "$gw" >/dev/null 2>&1; then
-        return 1
+    if [[ -n "$gw" ]] && /sbin/ping -b "$iface" -S "$src_ip" -c 1 -t 2 "$gw" >/dev/null 2>&1; then
+        :
     fi
 
     for ((attempt=1; attempt<=REACH_ATTEMPTS; attempt++)); do
         # 优先：绑定有线源 IP 探测（不走 WiFi 通道，避免误判）
         for host in "${REACHABILITY_HOSTS[@]}"; do
-            if /sbin/ping -S "$src_ip" -c 1 -t "$PING_TIMEOUT" "$host" >/dev/null 2>&1; then
+            if /sbin/ping -b "$iface" -S "$src_ip" -c 1 -t "$PING_TIMEOUT" "$host" >/dev/null 2>&1; then
                 return 0
             fi
         done
@@ -149,12 +149,7 @@ check_reachable() {
         [[ $attempt -lt $REACH_ATTEMPTS ]] && sleep "$REACH_RETRY_GAP"
     done
 
-    # 降级：不绑定源 IP（适用于 -S 受限环境），仍能反映整体联通性
-    for host in "${REACHABILITY_HOSTS[@]}"; do
-        if /sbin/ping -c 1 -t "$PING_TIMEOUT" "$host" >/dev/null 2>&1; then
-            return 0
-        fi
-    done
+    # 不做不绑定源地址的降级探测：那可能实际走 Wi-Fi，导致误关 Wi-Fi。
     return 1
 }
 

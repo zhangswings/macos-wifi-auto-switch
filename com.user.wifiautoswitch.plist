@@ -8,7 +8,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/woody/Documents/workbuddy-workplace/公司运营相关/2026-11-03-18-52-34/wifi-auto-switch/wifi-auto-switch.sh</string>
+        <string>__SCRIPT_PATH__</string>
     </array>
 
     <!-- 事件驱动：网络配置变化时触发，无常驻进程、无高频轮询 -->
@@ -31,9 +31,5 @@
     <key>ThrottleInterval</key>
     <integer>10</integer>
 
-    <key>StandardOutPath</key>
-    <string>/Users/woody/Library/Logs/wifiautoswitch.log</string>
-    <key>StandardErrorPath</key>
-    <string>/Users/woody/Library/Logs/wifiautoswitch.err.log</string>
 </dict>
 </plist>

@@ -8,11 +8,11 @@
 ## 功能特性
 
 - **自动互斥**：有线连且通 → 关 WiFi；断线 / 不通 → 开 WiFi。
-- **可达性判定**：不只看"网卡 up / 有 IP"，而是真正探测外网，且探测**绑定到有线网卡本身**（`ping -S <有线源IP>`），避免"有线没网却误关 WiFi 导致彻底断网"。
+- **可达性判定**：不只看"网卡 up / 有 IP"，而是真正探测外网，且探测**绑定到有线网卡本身**（`ping -b <接口> -S <有线源IP>`），避免误把 WiFi 的网络当成有线网络。
 - **多网卡**：遍历所有有线网卡，任一可达即关 WiFi。
-- **网关级探测**：先 ping 有线网关快速判定，失败即提前报"不通"，省去公网超时等待。
+- **网关级探测**：先尝试 ping 有线网关；网关不响应时仍继续做绑定源 IP 的公网探测，兼容过滤 ICMP 的企业网络。
 - **插线确认**：2 次 × 2s 重试，避免刚插线 DHCP/路由未就绪时误关。
-- **低频复检（watchdog）**：每 120s 一次单 ping，兜底"链路在但外网断了"的场景；可一键关闭变纯事件驱动。
+- **低频复检（watchdog）**：每 120s 运行一次完整可达性检查，兜底"链路在但外网断了"的场景；可一键关闭变纯事件驱动。
 - **零感知开销**：launchd `WatchPaths` 监听网络配置变化才触发，稳态 CPU ≈ 0。
 - **菜单栏 GUI**：顶栏 WiFi 图标一键开关、看状态、启用/停用后台守护、登录启动、看日志；手动关 WiFi 带防断网确认。
 - **无需 sudo**：以当前用户身份运行，后台守护用用户级 LaunchAgent。
@@ -87,9 +87,9 @@ mkdir -p ~/Library/Application\ Support/WiFiAutoSwitch
 cp wifi-auto-switch.sh ~/Library/Application\ Support/WiFiAutoSwitch/
 cp com.user.wifiautoswitch.plist ~/Library/LaunchAgents/
 
-# 2. 让 plist 指向脚本真实路径（如需）
-#    sed -i '' 's#/bin/bash#/bin/bash ~/Library/Application\\ Support/WiFiAutoSwitch/wifi-auto-switch.sh#' \
-#       ~/Library/LaunchAgents/com.user.wifiautoswitch.plist
+# 2. 让 plist 指向脚本真实路径
+plutil -replace ProgramArguments -xml '<array><string>/bin/bash</string><string>'"$HOME"'/Library/Application Support/WiFiAutoSwitch/wifi-auto-switch.sh</string></array>' \
+  ~/Library/LaunchAgents/com.user.wifiautoswitch.plist
 
 # 3. 加载守护进程（用户级，无需 sudo）
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.wifiautoswitch.plist
@@ -175,7 +175,7 @@ A：会——只要没有可达有线（符合"断线/不通 → 开 WiFi"的需
 A：脚本有 2×2s 重试确认，且依赖系统网络配置变化事件触发；插线后通常几秒内完成。
 
 **Q：公司网络禁 ICMP（ping 不通）但能上网，会误判吗？**
-A：会。此时请把 `REACHABILITY_HOSTS` 改为一个可达的 TCP 探测目标，或改用 `curl` 探测（见脚本 `check_reachable` 注释扩展）。
+A：程序会保持 WiFi 开启，不会因为 WiFi 自身可达而误关 WiFi。若希望在这类网络上自动关闭 WiFi，应把脚本中的探测实现改为绑定有线接口的 TCP/HTTPS 探测，并使用公司允许访问的目标。
 
 **Q：需要 sudo 吗？**
 A：不需要，全部以当前用户身份运行。
