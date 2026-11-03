@@ -1,0 +1,7 @@
+# 构建产物
+build/
+*.app/
+.DS_Store
+
+# 上游参考仓库（仅本地参考，不入库）
+upstream/

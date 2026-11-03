@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.wifiautoswitch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/woody/Documents/workbuddy-workplace/公司运营相关/2026-11-03-18-52-34/wifi-auto-switch/wifi-auto-switch.sh</string>
+    </array>
+
+    <!-- 事件驱动：网络配置变化时触发，无常驻进程、无高频轮询 -->
+    <key>WatchPaths</key>
+    <array>
+        <string>/Library/Preferences/SystemConfiguration</string>
+    </array>
+
+    <!-- 低频复检：覆盖"链路在但外网断了"的边界（120s 一次单 ping，开销可忽略） -->
+    <key>StartInterval</key>
+    <integer>120</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <!-- 10s 内重复触发会被 launchd 节流，防止重启循环 -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/woody/Library/Logs/wifiautoswitch.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/woody/Library/Logs/wifiautoswitch.err.log</string>
+</dict>
+</plist>
